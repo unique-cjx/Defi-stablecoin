@@ -14,15 +14,19 @@ contract DSCcore is ReentrancyGuard {
     // Errors
     ///////////////////
     error DSCcore__MustBeMoreThanZero();
-    error DSCcore_TokenAddressAndPriceFeedAddressLengthMustBeSame();
+    error DSCcore__TokenAddressAndPriceFeedAddressLengthMustBeSame();
     error DSCcore__NotAllowedToken();
     error DSCcore__TransferFailed();
+    error DSCcore__HealthFactorBelowOne(uint256 userHealthFactor);
+    error DSCcore__MintFailed();
 
     ///////////////////
     // States Variables
     ///////////////////
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18;
+    uint256 private constant LIQUIDATION_THRESHOLD = 50; // 200% overcollateralized
+    uint256 private constant MIN_HEALTH_FACTOR = 1;
 
     /// @notice Mapping of user address to mapping of token address to price feed address.
     /// @dev We need to use chainlink price feeds to get the USD value of WBTC and WETH pairs.
@@ -63,7 +67,7 @@ contract DSCcore is ReentrancyGuard {
     ///////////////////
     constructor(address[] memory tokenAddrs, address[] memory priceFeedAddrs, address dscAddr) {
         if (tokenAddrs.length != priceFeedAddrs.length) {
-            revert DSCcore_TokenAddressAndPriceFeedAddressLengthMustBeSame();
+            revert DSCcore__TokenAddressAndPriceFeedAddressLengthMustBeSame();
         }
         // Trade pairs
         // e.g. BTC / USD, ETH / USD
@@ -96,7 +100,11 @@ contract DSCcore is ReentrancyGuard {
 
     function mintDsc(uint256 amountDscToMint) external moreThanZero(amountDscToMint) nonReentrant {
         s_dscMinted[msg.sender] += amountDscToMint;
-        i_dsc.mint(msg.sender, amountDscToMint);
+        _revertIfHealthFactorIsLow(msg.sender);
+        bool minted = i_dsc.mint(msg.sender, amountDscToMint);
+        if (!minted) {
+            revert DSCcore__MintFailed();
+        }
     }
 
     function redeemCollateralForDsc() external { }
@@ -119,7 +127,24 @@ contract DSCcore is ReentrancyGuard {
         collateralValueInUsd = getAccountCollateralValue(user);
     }
 
-    function _healthFactor(address user) private view returns (uint256) {}
+    /// @notice Returns how close a user is to liquidation, if the result is below 1, the user is liquidatable.
+    function _healthFactor(address user) private view returns (uint256) {
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
+        if (totalDscMinted == 0) {
+            return type(uint256).max;
+        }
+        // e.g. $200 collateral, $100 DSC minted, 50% liquidation threshold
+        uint256 collateralThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / 100;
+
+        return (collateralThreshold * PRECISION) / totalDscMinted;
+    }
+
+    function _revertIfHealthFactorIsLow(address user) private view {
+        uint256 userHealthFactor = _healthFactor(user);
+        if (userHealthFactor < MIN_HEALTH_FACTOR) {
+            revert DSCcore__HealthFactorBelowOne(userHealthFactor);
+        }
+    }
 
     ///////////////////////////////////
     // Public & External Functions
@@ -130,7 +155,6 @@ contract DSCcore is ReentrancyGuard {
             uint256 amount = s_collateralDeposited[user][token];
             totalValueInUSD += getUSDValue(token, amount);
         }
-        return totalValueInUSD;
     }
 
     function getUSDValue(address token, uint256 amount) public view returns (uint256) {
