@@ -78,7 +78,20 @@ contract DSCcore is ReentrancyGuard {
         i_dsc = DecentralizedStableCoin(dscAddr);
     }
 
-    function depositCollateralAndMint() external { }
+    /// @notice Deposits collateral and mints DSC in a single transaction.
+    /// @param tokenCollateral The address of the collateral token
+    /// @param amountCollateral The amount of collateral to deposit
+    /// @param amountDscToMint The amount of DSC to mint
+    function depositCollateralAndMint(
+        address tokenCollateral,
+        uint256 amountCollateral,
+        uint256 amountDscToMint
+    )
+        external
+    {
+        depositCollateral(tokenCollateral, amountCollateral);
+        mintDsc(amountDscToMint);
+    }
 
     /// @param tokenCollateral The address of the collateral token
     /// @param amountCollateral The amount of collateral to deposit
@@ -86,7 +99,7 @@ contract DSCcore is ReentrancyGuard {
         address tokenCollateral,
         uint256 amountCollateral
     )
-        external
+        public
         moreThanZero(amountCollateral)
         isAllowedToken(tokenCollateral)
         nonReentrant
@@ -98,7 +111,7 @@ contract DSCcore is ReentrancyGuard {
         }
     }
 
-    function mintDsc(uint256 amountDscToMint) external moreThanZero(amountDscToMint) nonReentrant {
+    function mintDsc(uint256 amountDscToMint) public moreThanZero(amountDscToMint) nonReentrant {
         s_dscMinted[msg.sender] += amountDscToMint;
         _revertIfHealthFactorIsLow(msg.sender);
         bool minted = i_dsc.mint(msg.sender, amountDscToMint);

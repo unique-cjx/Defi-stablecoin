@@ -9,8 +9,8 @@ contract HelperConfig is Script {
     NetworkConfig public activeNetworkConfig;
 
     uint8 public constant DECIMALS = 8;
-    int256 public constant ETH_USD_PRICE = 3000e8;
-    int256 public constant BTC_USD_PRICE = 10_000e8;
+    int256 public constant ETH_USD_PRICE = 4000e8;
+    int256 public constant BTC_USD_PRICE = 110_000e8;
 
     struct NetworkConfig {
         address wethUsdPriceFeed;
@@ -24,6 +24,7 @@ contract HelperConfig is Script {
     uint256 public DEFAULT_ANVIL_PRIVATE_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
 
     constructor() {
+        // TODO else if mainnet
         if (block.chainid == 11_155_111) {
             activeNetworkConfig = getSepoliaEthConfig();
         } else {
@@ -50,10 +51,10 @@ contract HelperConfig is Script {
 
         vm.startBroadcast();
         MockV3Aggregator ethUsdPriceFeed = new MockV3Aggregator(DECIMALS, ETH_USD_PRICE);
-        ERC20Mock wethMock = new ERC20Mock("WETH", "WETH", msg.sender, 10_000);
+        ERC20Mock wethMock = new ERC20Mock("WETH", "WETH", msg.sender, 100);
 
         MockV3Aggregator btcUsdPriceFeed = new MockV3Aggregator(DECIMALS, BTC_USD_PRICE);
-        ERC20Mock wbtcMock = new ERC20Mock("WBTC", "WBTC", msg.sender, 10_000);
+        ERC20Mock wbtcMock = new ERC20Mock("WBTC", "WBTC", msg.sender, 10);
         vm.stopBroadcast();
 
         anvilNetworkConfig = NetworkConfig({
