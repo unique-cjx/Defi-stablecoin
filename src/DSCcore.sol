@@ -44,6 +44,7 @@ contract DSCcore is ReentrancyGuard {
     // Events
     ///////////////////
     event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
+    event CollateralRedeemed(address indexed user, address indexed token, uint256 amount);
 
     ///////////////////
     // Modifiers
@@ -78,7 +79,7 @@ contract DSCcore is ReentrancyGuard {
         i_dsc = DecentralizedStableCoin(dscAddr);
     }
 
-    /// @notice Deposits collateral and mints DSC in a single transaction.
+    /// @notice Deposits collateral tokens and mints DSC tokens.
     /// @param tokenCollateral The address of the collateral token
     /// @param amountCollateral The amount of collateral to deposit
     /// @param amountDscToMint The amount of DSC to mint
@@ -93,6 +94,7 @@ contract DSCcore is ReentrancyGuard {
         mintDsc(amountDscToMint);
     }
 
+    /// Deposits collateral token into the DSCcore contract.
     /// @param tokenCollateral The address of the collateral token
     /// @param amountCollateral The amount of collateral to deposit
     function depositCollateral(
@@ -105,12 +107,14 @@ contract DSCcore is ReentrancyGuard {
         nonReentrant
     {
         s_collateralDeposited[msg.sender][tokenCollateral] += amountCollateral;
+        emit CollateralDeposited(msg.sender, tokenCollateral, amountCollateral);
         bool success = IERC20(tokenCollateral).transferFrom(msg.sender, address(this), amountCollateral);
         if (!success) {
             revert DSCcore__TransferFailed();
         }
     }
 
+    /// Mints DSC tokens.
     function mintDsc(uint256 amountDscToMint) public moreThanZero(amountDscToMint) nonReentrant {
         s_dscMinted[msg.sender] += amountDscToMint;
         _revertIfHealthFactorIsLow(msg.sender);
@@ -120,9 +124,41 @@ contract DSCcore is ReentrancyGuard {
         }
     }
 
-    function redeemCollateralForDsc() external { }
+    /// Redeems collateral tokens.
+    /// @param tokenCollateral The address of the collateral token
+    /// @param amountCollateral The amount of collateral to deposit
+    function redeemCollateral(
+        address tokenCollateral,
+        uint256 amountCollateral
+    )
+        public
+        moreThanZero(amountCollateral)
+        nonReentrant
+    {
+        s_collateralDeposited[msg.sender][tokenCollateral] -= amountCollateral;
+        emit CollateralRedeemed(msg.sender, tokenCollateral, amountCollateral);
+        bool success = IERC20(tokenCollateral).transfer(msg.sender, amountCollateral);
+        if (!success) {
+            revert DSCcore__TransferFailed();
+        }
+        _revertIfHealthFactorIsLow(msg.sender);
+    }
 
-    function burnDsc() external { }
+    /// Burns DSC tokens.
+    /// @param amountDsc The amount of DSC tokens to burn
+    function burnDsc(uint256 amountDsc) public moreThanZero(amountDsc) {
+        s_dscMinted[msg.sender] -= amountDsc;
+        bool success = i_dsc.transferFrom(msg.sender, address(this), amountDsc);
+        if (!success) {
+            revert DSCcore__TransferFailed();
+        }
+        i_dsc.burn(amountDsc);
+    }
+
+    function redeemCollateralForDsc(address tokenCollateral, uint256 amountDsc, uint256 amountCollateral) external {
+        burnDsc(amountDsc);
+        redeemCollateral(tokenCollateral, amountCollateral);
+    }
 
     function getHealthFactor() external view returns (uint256) { }
 
