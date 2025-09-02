@@ -17,16 +17,24 @@ contract DSCcore is ReentrancyGuard {
     error DSCcore__TokenAddressAndPriceFeedAddressLengthMustBeSame();
     error DSCcore__NotAllowedToken();
     error DSCcore__TransferFailed();
-    error DSCcore__HealthFactorBelowOne(uint256 userHealthFactor);
     error DSCcore__MintFailed();
 
-    ///////////////////
+    error DSCcore__HealthFactorBelowOne(uint256 userHealthFactor);
+    error DSCcore__HealthFactorAboveMinimum(uint256 userHealthFactor);
+    error DSCcore__HealthFactorNotImproved();
+
+    ////////////////////////
     // States Variables
-    ///////////////////
+    ////////////////////////
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18;
-    uint256 private constant LIQUIDATION_THRESHOLD = 50; // 200% overcollateralized
     uint256 private constant MIN_HEALTH_FACTOR = 1;
+    /// liquidation methods variables.
+    /// The liquidation threshold is 50%.
+    /// This means a user must be 200% overcollateralized or they can be liquidated.
+    uint256 private constant LIQUIDATION_THRESHOLD = 50; // 200% overcollateralized
+    uint256 private constant LIQUIDATION_PRECISION = 100;
+    uint256 private constant LIQUIDATION_BONUS = 10;
 
     /// @notice Mapping of user address to mapping of token address to price feed address.
     /// @dev We need to use chainlink price feeds to get the USD value of WBTC and WETH pairs.
@@ -44,7 +52,7 @@ contract DSCcore is ReentrancyGuard {
     // Events
     ///////////////////
     event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
-    event CollateralRedeemed(address indexed user, address indexed token, uint256 amount);
+    event CollateralRedeemed(address indexed from, address indexed to, address indexed token, uint256 amount);
 
     ///////////////////
     // Modifiers
@@ -63,9 +71,6 @@ contract DSCcore is ReentrancyGuard {
         _;
     }
 
-    ///////////////////
-    // Functions
-    ///////////////////
     constructor(address[] memory tokenAddrs, address[] memory priceFeedAddrs, address dscAddr) {
         if (tokenAddrs.length != priceFeedAddrs.length) {
             revert DSCcore__TokenAddressAndPriceFeedAddressLengthMustBeSame();
@@ -79,7 +84,11 @@ contract DSCcore is ReentrancyGuard {
         i_dsc = DecentralizedStableCoin(dscAddr);
     }
 
-    /// @notice Deposits collateral tokens and mints DSC tokens.
+    ///////////////////
+    // Functions
+    ///////////////////
+
+    /// @notice User deposits collateral and mints DSC tokens.
     /// @param tokenCollateral The address of the collateral token
     /// @param amountCollateral The amount of collateral to deposit
     /// @param amountDscToMint The amount of DSC to mint
@@ -124,6 +133,12 @@ contract DSCcore is ReentrancyGuard {
         }
     }
 
+    /// User redeems collateral for DSC tokens.
+    function redeemCollateralForDsc(address tokenCollateral, uint256 amountDsc, uint256 amountCollateral) external {
+        burnDsc(amountDsc);
+        redeemCollateral(tokenCollateral, amountCollateral);
+    }
+
     /// Redeems collateral tokens.
     /// @param tokenCollateral The address of the collateral token
     /// @param amountCollateral The amount of collateral to deposit
@@ -135,36 +150,117 @@ contract DSCcore is ReentrancyGuard {
         moreThanZero(amountCollateral)
         nonReentrant
     {
-        s_collateralDeposited[msg.sender][tokenCollateral] -= amountCollateral;
-        emit CollateralRedeemed(msg.sender, tokenCollateral, amountCollateral);
-        bool success = IERC20(tokenCollateral).transfer(msg.sender, amountCollateral);
-        if (!success) {
-            revert DSCcore__TransferFailed();
-        }
+        _redeemCollateral(tokenCollateral, amountCollateral, msg.sender, msg.sender);
         _revertIfHealthFactorIsLow(msg.sender);
     }
 
     /// Burns DSC tokens.
     /// @param amountDsc The amount of DSC tokens to burn
     function burnDsc(uint256 amountDsc) public moreThanZero(amountDsc) {
-        s_dscMinted[msg.sender] -= amountDsc;
-        bool success = i_dsc.transferFrom(msg.sender, address(this), amountDsc);
+        _burnDsc(msg.sender, msg.sender, amountDsc);
+        _revertIfHealthFactorIsLow(msg.sender);
+    }
+
+    /// @notice Liquidates a user's position.
+    /// @param tokenCollateral The address of the collateral ERC20 token from the user
+    /// @param user The address of the user to liquidate
+    /// @param debtToCover The amount of DSC token you want to burn and to improve the user's health factor
+    function liquidate(
+        address tokenCollateral,
+        address user,
+        uint256 debtToCover
+    )
+        external
+        moreThanZero(debtToCover)
+        nonReentrant
+    {
+        uint256 userHealthFactor = _healthFactor(user);
+        if (userHealthFactor >= MIN_HEALTH_FACTOR) {
+            revert DSCcore__HealthFactorAboveMinimum(userHealthFactor);
+        }
+
+        // We need to burn users DSC tokens and take their collateral.
+        // If a user deposited $140 ETH, and borrowed $100 DSC,
+        // then the health factor would be less than 1.0, so debtToCover is $100.
+        burnDsc(debtToCover);
+        uint256 tokenAmount = getTokenAmountFromUsd(tokenCollateral, debtToCover);
+        // bonus: (0.025e18 * 10) / 100 = 0.0025e18 = 25e14
+        uint256 rewards = (tokenAmount * LIQUIDATION_BONUS) / LIQUIDATION_PRECISION;
+
+        uint256 totalCollateralToTransfer = tokenAmount + rewards;
+        _redeemCollateral(tokenCollateral, totalCollateralToTransfer, user, msg.sender);
+
+        // Liquidator need to burn DSC tokens instead of users.
+        _burnDsc(user, msg.sender, debtToCover);
+
+        uint256 finallyHealthFactor = _healthFactor(user);
+        if (finallyHealthFactor < MIN_HEALTH_FACTOR) {
+            revert DSCcore__HealthFactorNotImproved();
+        }
+        _revertIfHealthFactorIsLow(user);
+    }
+
+    function getHealthFactor() external view returns (uint256) { }
+
+    function getTokenAmountFromUsd(
+        address token,
+        uint256 usdAmountInWei
+    )
+        public
+        view
+        isAllowedToken(token)
+        returns (uint256)
+    {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
+        (, int256 price,,,) = priceFeed.latestRoundData();
+
+        // Get the 18-digit number (decimals) of this token; it will give you more accuracy
+        uint256 accurateUsdAmountInWei = usdAmountInWei * PRECISION;
+
+        // If price equals $4000
+        // ($100e18 * e18) / ($4000e8 * 1e10)
+        // result: 0.025e18 = 25e15
+        return accurateUsdAmountInWei / (uint256(price) * ADDITIONAL_FEED_PRECISION);
+    }
+
+    function getAccountCollateralValue(address user) public view returns (uint256 totalValueInUSD) {
+        for (uint256 i = 0; i < s_collateralTokens.length; i++) {
+            address token = s_collateralTokens[i];
+            uint256 amount = s_collateralDeposited[user][token];
+            totalValueInUSD += getUSDValue(token, amount);
+        }
+    }
+
+    function getUSDValue(address token, uint256 amount) public view returns (uint256) {
+        address priceFeed = s_priceFeeds[token]; // WETH or WBTC price
+
+        // get the price from the chainlink price feed
+        (, int256 price,,,) = AggregatorV3Interface(priceFeed).latestRoundData();
+        // Chainlink default feeds are 8 decimals
+        return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
+    }
+
+    ///////////////////////////////////
+    // Internal & Private Functions
+    ///////////////////////////////////
+
+    function _burnDsc(address user, address dscFrom, uint256 amountDsc) private {
+        s_dscMinted[user] -= amountDsc;
+        bool success = i_dsc.transferFrom(dscFrom, address(this), amountDsc);
         if (!success) {
             revert DSCcore__TransferFailed();
         }
         i_dsc.burn(amountDsc);
     }
 
-    function redeemCollateralForDsc(address tokenCollateral, uint256 amountDsc, uint256 amountCollateral) external {
-        burnDsc(amountDsc);
-        redeemCollateral(tokenCollateral, amountCollateral);
+    function _redeemCollateral(address tokenCollateral, uint256 amountCollateral, address from, address to) private {
+        s_collateralDeposited[from][tokenCollateral] -= amountCollateral;
+        emit CollateralRedeemed(from, to, tokenCollateral, amountCollateral);
+        bool success = IERC20(tokenCollateral).transfer(to, amountCollateral);
+        if (!success) {
+            revert DSCcore__TransferFailed();
+        }
     }
-
-    function getHealthFactor() external view returns (uint256) { }
-
-    ///////////////////////////////////
-    // Internal & Private Functions
-    ///////////////////////////////////
 
     /// @notice Returns the total DSC minted and the collateral value in USD for a given user.
     function _getAccountInformation(address user)
@@ -183,7 +279,7 @@ contract DSCcore is ReentrancyGuard {
             return type(uint256).max;
         }
         // e.g. $200 collateral, $100 DSC minted, 50% liquidation threshold
-        uint256 collateralThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / 100;
+        uint256 collateralThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
 
         return (collateralThreshold * PRECISION) / totalDscMinted;
     }
@@ -193,25 +289,5 @@ contract DSCcore is ReentrancyGuard {
         if (userHealthFactor < MIN_HEALTH_FACTOR) {
             revert DSCcore__HealthFactorBelowOne(userHealthFactor);
         }
-    }
-
-    ///////////////////////////////////
-    // Public & External Functions
-    ///////////////////////////////////
-    function getAccountCollateralValue(address user) public view returns (uint256 totalValueInUSD) {
-        for (uint256 i = 0; i < s_collateralTokens.length; i++) {
-            address token = s_collateralTokens[i];
-            uint256 amount = s_collateralDeposited[user][token];
-            totalValueInUSD += getUSDValue(token, amount);
-        }
-    }
-
-    function getUSDValue(address token, uint256 amount) public view returns (uint256) {
-        address priceFeed = s_priceFeeds[token]; // WETH or WBTC price
-
-        // get the price from the chainlink price feed
-        (, int256 price,,,) = AggregatorV3Interface(priceFeed).latestRoundData();
-        // Chainlink feeds often have 8 decimals.
-        return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
     }
 }
