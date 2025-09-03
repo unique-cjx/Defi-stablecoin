@@ -13,8 +13,10 @@ contract DSCcore is ReentrancyGuard {
     ///////////////////
     // Errors
     ///////////////////
-    error DSCcore__MustBeMoreThanZero();
+    error DSCcore__TokenAddressAndPriceFeedAddressLengthMustBeMoreThanZero();
     error DSCcore__TokenAddressAndPriceFeedAddressLengthMustBeSame();
+
+    error DSCcore__MustBeMoreThanZero();
     error DSCcore__NotAllowedToken();
     error DSCcore__TransferFailed();
     error DSCcore__MintFailed();
@@ -72,6 +74,10 @@ contract DSCcore is ReentrancyGuard {
     }
 
     constructor(address[] memory tokenAddrs, address[] memory priceFeedAddrs, address dscAddr) {
+        if (tokenAddrs.length == 0 || priceFeedAddrs.length == 0) {
+            revert DSCcore__TokenAddressAndPriceFeedAddressLengthMustBeMoreThanZero();
+        }
+
         if (tokenAddrs.length != priceFeedAddrs.length) {
             revert DSCcore__TokenAddressAndPriceFeedAddressLengthMustBeSame();
         }
@@ -180,9 +186,8 @@ contract DSCcore is ReentrancyGuard {
         }
 
         // We need to burn users DSC tokens and take their collateral.
-        // If a user deposited $140 ETH, and borrowed $100 DSC,
+        // If a user deposited $140 WETH, and borrowed $100 DSC,
         // then the health factor would be less than 1.0, so debtToCover is $100.
-        burnDsc(debtToCover);
         uint256 tokenAmount = getTokenAmountFromUsd(tokenCollateral, debtToCover);
         // bonus: (0.025e18 * 10) / 100 = 0.0025e18 = 25e14
         uint256 rewards = (tokenAmount * LIQUIDATION_BONUS) / LIQUIDATION_PRECISION;
@@ -238,6 +243,10 @@ contract DSCcore is ReentrancyGuard {
         (, int256 price,,,) = AggregatorV3Interface(priceFeed).latestRoundData();
         // Chainlink default feeds are 8 decimals
         return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
+    }
+
+    function getAccountInformation() public view returns (uint256 totalDscMinted, uint256 collateralValueInUsd) {
+        (totalDscMinted, collateralValueInUsd) = _getAccountInformation(msg.sender);
     }
 
     ///////////////////////////////////

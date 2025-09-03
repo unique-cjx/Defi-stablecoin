@@ -34,6 +34,18 @@ contract DSCcoreTest is Test {
         ERC20Mock(weth).mint(testUser, STARTING_ERC20_BALANCE);
     }
 
+    /// Constructor Tests
+
+    function testConstructor() external {
+        address[] memory tokenAddrs = new address[](2);
+        address[] memory priceFeedAddrs = new address[](1);
+        tokenAddrs[0] = weth;
+        tokenAddrs[1] = wbtc;
+        priceFeedAddrs[0] = wethUsdPriceFeed;
+        vm.expectRevert(DSCcore.DSCcore__TokenAddressAndPriceFeedAddressLengthMustBeSame.selector);
+        new DSCcore(tokenAddrs, priceFeedAddrs, address(dsc));
+    }
+
     /// Price feed tests
 
     function testGetUsdValue() external {
@@ -43,7 +55,27 @@ contract DSCcoreTest is Test {
         assertEq(expectUsd, actualUsd);
     }
 
+    function testGetTokenAmountFromUsd() external {
+        // mock weth price is $4000
+        uint256 usdAmount = 100e18;
+        uint256 expectedWeth = 0.025e18;
+        uint256 actualWeth = dscCore.getTokenAmountFromUsd(weth, usdAmount);
+        assertEq(expectedWeth, actualWeth);
+    }
+
     /// Deposit collateral tests
+
+    modifier depositeCollateral(uint256 mintDscAmount) {
+        vm.startPrank(testUser);
+        ERC20Mock(weth).approve(address(dscCore), AMOUNT_COLLATERAL);
+        if (mintDscAmount > 0) {
+            dscCore.depositCollateralAndMint(weth, AMOUNT_COLLATERAL, mintDscAmount);
+        } else {
+            dscCore.depositCollateral(weth, AMOUNT_COLLATERAL);
+        }
+        vm.stopPrank();
+        _;
+    }
 
     function testDepositCollateral() external {
         vm.startPrank(testUser);
@@ -52,5 +84,21 @@ contract DSCcoreTest is Test {
         vm.expectRevert(DSCcore.DSCcore__MustBeMoreThanZero.selector);
         dscCore.depositCollateral(weth, 0);
         vm.stopPrank();
+    }
+
+    function testRevertsUnApprovedCollateral() external {
+        ERC20Mock roseToken = new ERC20Mock("Rose Token", "ROSE", testUser, AMOUNT_COLLATERAL);
+        vm.startPrank(testUser);
+        vm.expectRevert(DSCcore.DSCcore__NotAllowedToken.selector);
+        dscCore.depositCollateral(address(roseToken), AMOUNT_COLLATERAL);
+        vm.stopPrank();
+    }
+
+    function testDepositAndGetAccountInformation() external depositeCollateral(0) {
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dscCore.getAccountInformation();
+        uint256 expectedTotalValueInUSD = dscCore.getAccountCollateralValue(testUser); // the amount of weth is 10, each
+            // price is $4,000
+        assertEq(totalDscMinted, 0);
+        assertEq(40_000e18, expectedTotalValueInUSD);
     }
 }
