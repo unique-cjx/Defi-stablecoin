@@ -13,22 +13,33 @@ contract DeployDSC is Script {
 
     function run() external returns (DecentralizedStableCoin, DSCcore, HelperConfig) {
         HelperConfig helperConfig = new HelperConfig();
-        (address wethUsdPriceFeed, address wbtcUsdPriceFeed, address weth, address wbtc, uint256 deployerKey) =
+        (address wethUsdPriceFeed, address wbtcUsdPriceFeed, address weth, address wbtc) =
             helperConfig.activeNetworkConfig();
 
-        // Deploy DSC and DSCcore contracts
-        vm.startBroadcast(deployerKey);
-        DecentralizedStableCoin dsc = new DecentralizedStableCoin(msg.sender, "Decentralized Stable Coin", "DSC");
+        uint256 deployerKey = helperConfig.DEPLOYER_KEY();
         tokenAddrs = [wbtc, weth];
         priceFeedAddrs = [wbtcUsdPriceFeed, wethUsdPriceFeed];
-        DSCcore dscCore = new DSCcore(tokenAddrs, priceFeedAddrs, address(dsc));
-        // Only transfer ownership when not running on local test chain (Anvil/Foundry default chain id 31337).
-        // This avoids breaking tests that expect the test account to be the owner.
-        if (block.chainid != 31_337) {
-            dsc.transferOwnership(address(dscCore));
-        }
-        vm.stopBroadcast();
 
+        DecentralizedStableCoin dsc;
+        DSCcore dscCore;
+
+        if (block.chainid == 31_337) {
+            address owner = msg.sender;
+            vm.startPrank(owner);
+            (dsc, dscCore) = deployContracts(owner);
+            vm.stopPrank();
+        } else {
+            vm.startBroadcast(deployerKey);
+            (dsc, dscCore) = deployContracts(msg.sender);
+            vm.stopBroadcast();
+        }
         return (dsc, dscCore, helperConfig);
+    }
+
+    function deployContracts(address owner) public returns (DecentralizedStableCoin, DSCcore) {
+        DecentralizedStableCoin dsc = new DecentralizedStableCoin(owner, "Decentralized Stable Coin", "DSC");
+        DSCcore dscCore = new DSCcore(tokenAddrs, priceFeedAddrs, address(dsc));
+        dsc.transferOwnership(address(dscCore));
+        return (dsc, dscCore);
     }
 }

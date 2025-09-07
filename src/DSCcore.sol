@@ -30,7 +30,7 @@ contract DSCcore is ReentrancyGuard {
     ////////////////////////
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18;
-    uint256 private constant MIN_HEALTH_FACTOR = 1;
+    uint256 private constant MIN_HEALTH_FACTOR = 1e18;
     /// liquidation methods variables.
     /// The liquidation threshold is 50%.
     /// This means a user must be 200% overcollateralized or they can be liquidated.
@@ -91,7 +91,7 @@ contract DSCcore is ReentrancyGuard {
     }
 
     ///////////////////
-    // Functions
+    // Core Functions
     ///////////////////
 
     /// @notice User deposits collateral and mints DSC tokens.
@@ -205,8 +205,6 @@ contract DSCcore is ReentrancyGuard {
         _revertIfHealthFactorIsLow(user);
     }
 
-    function getHealthFactor() external view returns (uint256) { }
-
     function getTokenAmountFromUsd(
         address token,
         uint256 usdAmountInWei
@@ -226,27 +224,6 @@ contract DSCcore is ReentrancyGuard {
         // ($100e18 * e18) / ($4000e8 * 1e10)
         // result: 0.025e18 = 25e15
         return accurateUsdAmountInWei / (uint256(price) * ADDITIONAL_FEED_PRECISION);
-    }
-
-    function getAccountCollateralValue(address user) public view returns (uint256 totalValueInUSD) {
-        for (uint256 i = 0; i < s_collateralTokens.length; i++) {
-            address token = s_collateralTokens[i];
-            uint256 amount = s_collateralDeposited[user][token];
-            totalValueInUSD += getUSDValue(token, amount);
-        }
-    }
-
-    function getUSDValue(address token, uint256 amount) public view returns (uint256) {
-        address priceFeed = s_priceFeeds[token]; // WETH or WBTC price
-
-        // get the price from the chainlink price feed
-        (, int256 price,,,) = AggregatorV3Interface(priceFeed).latestRoundData();
-        // Chainlink default feeds are 8 decimals
-        return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
-    }
-
-    function getAccountInformation() public view returns (uint256 totalDscMinted, uint256 collateralValueInUsd) {
-        (totalDscMinted, collateralValueInUsd) = _getAccountInformation(msg.sender);
     }
 
     ///////////////////////////////////
@@ -284,6 +261,17 @@ contract DSCcore is ReentrancyGuard {
     /// @notice Returns how close a user is to liquidation, if the result is below 1, the user is liquidatable.
     function _healthFactor(address user) private view returns (uint256) {
         (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
+        return _calculateHealthFactor(totalDscMinted, collateralValueInUsd);
+    }
+
+    function _calculateHealthFactor(
+        uint256 totalDscMinted,
+        uint256 collateralValueInUsd
+    )
+        private
+        view
+        returns (uint256)
+    {
         if (totalDscMinted == 0) {
             return type(uint256).max;
         }
@@ -298,5 +286,73 @@ contract DSCcore is ReentrancyGuard {
         if (userHealthFactor < MIN_HEALTH_FACTOR) {
             revert DSCcore__HealthFactorBelowOne(userHealthFactor);
         }
+    }
+
+    //////////////////////////////////////
+    // GET Public & External Functions
+    //////////////////////////////////////
+
+    function getAccountCollateralValue(address user) public view returns (uint256 totalValueInUSD) {
+        for (uint256 i = 0; i < s_collateralTokens.length; i++) {
+            address token = s_collateralTokens[i];
+            uint256 amount = s_collateralDeposited[user][token];
+            totalValueInUSD += getUSDValue(token, amount);
+        }
+    }
+
+    function getUSDValue(address token, uint256 amount) public view returns (uint256) {
+        address priceFeed = s_priceFeeds[token]; // WETH or WBTC price
+
+        // get the price from the chainlink price feed
+        (, int256 price,,,) = AggregatorV3Interface(priceFeed).latestRoundData();
+        // Chainlink default feeds are 8 decimals
+        return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
+    }
+
+    function getAccountInformation() public view returns (uint256 totalDscMinted, uint256 collateralValueInUsd) {
+        (totalDscMinted, collateralValueInUsd) = _getAccountInformation(msg.sender);
+    }
+
+    function getHealthFactor() external view returns (uint256) {
+        return _healthFactor(msg.sender);
+    }
+
+    function calculateHealthFactor(
+        uint256 totalDscMinted,
+        uint256 collateralValueInUsd
+    )
+        external
+        view
+        returns (uint256)
+    {
+        return _calculateHealthFactor(totalDscMinted, collateralValueInUsd);
+    }
+
+    function getAddress() external view returns (address) {
+        return address(i_dsc);
+    }
+
+    function getCollateralTokens() external view returns (address[] memory) {
+        return s_collateralTokens;
+    }
+
+    function getPrecision() external pure returns (uint256) {
+        return PRECISION;
+    }
+
+    function getAdditionalFeedPrecision() external pure returns (uint256) {
+        return ADDITIONAL_FEED_PRECISION;
+    }
+
+    function getLiquidationBonus() external pure returns (uint256) {
+        return LIQUIDATION_BONUS;
+    }
+
+    function getLiquidationPrecision() external pure returns (uint256) {
+        return LIQUIDATION_PRECISION;
+    }
+
+    function getMinHealthFactor() external pure returns (uint256) {
+        return MIN_HEALTH_FACTOR;
     }
 }

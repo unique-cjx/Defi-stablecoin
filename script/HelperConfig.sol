@@ -17,18 +17,20 @@ contract HelperConfig is Script {
         address wbtcUsdPriceFeed;
         address weth;
         address wbtc;
-        uint256 deployerKey;
     }
 
-    // Anvil runs local environment
-    uint256 public DEFAULT_ANVIL_PRIVATE_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+    uint256 public immutable DEPLOYER_KEY;
 
     constructor() {
         // TODO else if mainnet
         if (block.chainid == 11_155_111) {
             activeNetworkConfig = getSepoliaEthConfig();
+            DEPLOYER_KEY = vm.envUint("PRIVATE_KEY");
         } else {
             activeNetworkConfig = getOrCreateAnvilEthConfig();
+
+            // Anvil runs local environment
+            DEPLOYER_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
         }
     }
 
@@ -38,8 +40,7 @@ contract HelperConfig is Script {
             wethUsdPriceFeed: 0x694AA1769357215DE4FAC081bf1f309aDC325306,
             wbtcUsdPriceFeed: 0x694AA1769357215DE4FAC081bf1f309aDC325306,
             weth: 0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9,
-            wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063,
-            deployerKey: vm.envUint("PRIVATE_KEY")
+            wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063
         });
     }
 
@@ -48,21 +49,17 @@ contract HelperConfig is Script {
         if (activeNetworkConfig.wethUsdPriceFeed != address(0)) {
             return activeNetworkConfig;
         }
-
-        vm.startBroadcast();
         MockV3Aggregator ethUsdPriceFeed = new MockV3Aggregator(DECIMALS, ETH_USD_PRICE);
         ERC20Mock wethMock = new ERC20Mock("WETH", "WETH", msg.sender, 100);
 
         MockV3Aggregator btcUsdPriceFeed = new MockV3Aggregator(DECIMALS, BTC_USD_PRICE);
-        ERC20Mock wbtcMock = new ERC20Mock("WBTC", "WBTC", msg.sender, 10);
-        vm.stopBroadcast();
+        ERC20Mock wbtcMock = new ERC20Mock("WBTC", "WBTC", msg.sender, 100);
 
         anvilNetworkConfig = NetworkConfig({
             wethUsdPriceFeed: address(ethUsdPriceFeed),
             wbtcUsdPriceFeed: address(btcUsdPriceFeed),
             weth: address(wethMock),
-            wbtc: address(wbtcMock),
-            deployerKey: DEFAULT_ANVIL_PRIVATE_KEY
+            wbtc: address(wbtcMock)
         });
     }
 }
