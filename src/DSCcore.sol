@@ -20,6 +20,7 @@ contract DSCcore is ReentrancyGuard {
     error DSCcore__NotAllowedToken();
     error DSCcore__TransferFailed();
     error DSCcore__MintFailed();
+    error DSCcore__BurnAmountExceedsBalance();
 
     error DSCcore__HealthFactorBelowOne(uint256 userHealthFactor);
     error DSCcore__HealthFactorAboveMinimum(uint256 userHealthFactor);
@@ -157,7 +158,6 @@ contract DSCcore is ReentrancyGuard {
         nonReentrant
     {
         _redeemCollateral(tokenCollateral, amountCollateral, msg.sender, msg.sender);
-        _revertIfHealthFactorIsLow(msg.sender);
     }
 
     /// Burns DSC tokens.
@@ -231,6 +231,10 @@ contract DSCcore is ReentrancyGuard {
     ///////////////////////////////////
 
     function _burnDsc(address user, address dscFrom, uint256 amountDsc) private {
+        uint256 amountMintedDsc = s_dscMinted[user];
+        if (amountDsc > amountMintedDsc) {
+            revert DSCcore__BurnAmountExceedsBalance();
+        }
         s_dscMinted[user] -= amountDsc;
         bool success = i_dsc.transferFrom(dscFrom, address(this), amountDsc);
         if (!success) {
