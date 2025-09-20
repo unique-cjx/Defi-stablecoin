@@ -4,10 +4,11 @@ pragma solidity ^0.8.20;
 
 // import { console } from "forge-std/console.sol";
 import { Test } from "forge-std/Test.sol";
+
 import { DeployDSC } from "../../script/DeployDSC.sol";
 import { HelperConfig } from "../../script/HelperConfig.sol";
-import { DSCcore } from "../../src/DSCcore.sol";
 import { DecentralizedStableCoin } from "../../src/DecentralizedStableCoin.sol";
+import { DSCcore } from "../../src/DSCcore.sol";
 
 import { MockV3Aggregator } from "../../test/mocks/MockV3Aggregator.sol";
 import { ERC20Mock } from "../../test/mocks/ERC20Mock.sol";
@@ -31,6 +32,20 @@ contract DSCcoreTest is Test {
     uint256 public constant AMOUNT_COLLATERAL = 20 ether;
 
     address public liquidator = makeAddr("liquidator");
+
+    /// SetUp before running all of tests
+    function setUp() external {
+        DeployDSC deployer = new DeployDSC();
+
+        (dsc, dscCore, config) = deployer.run();
+        (wethUsdPriceFeed, wbtcUsdPriceFeed, weth, wbtc) = config.activeNetworkConfig();
+
+        ERC20Mock(weth).mint(testUser, 100 ether);
+        ERC20Mock(wbtc).mint(testUser, 10 ether);
+
+        ERC20Mock(weth).mint(liquidator, 100 ether);
+        ERC20Mock(wbtc).mint(liquidator, 10 ether);
+    }
 
     /// Modifiers
     modifier depositCollateral() {
@@ -76,20 +91,6 @@ contract DSCcoreTest is Test {
         dsc.approve(address(dscCore), dscAmount);
         vm.stopPrank();
         _;
-    }
-
-    /// SetUp before running all of tests
-    function setUp() external {
-        DeployDSC deployer = new DeployDSC();
-
-        (dsc, dscCore, config) = deployer.run();
-        (wethUsdPriceFeed, wbtcUsdPriceFeed, weth, wbtc) = config.activeNetworkConfig();
-
-        ERC20Mock(weth).mint(testUser, 100 ether);
-        ERC20Mock(wbtc).mint(testUser, 10 ether);
-
-        ERC20Mock(weth).mint(liquidator, 100 ether);
-        ERC20Mock(wbtc).mint(liquidator, 10 ether);
     }
 
     /// Common function for all tests

@@ -1,0 +1,50 @@
+// SPDX-License-Identifier: MIT
+
+pragma solidity ^0.8.20;
+
+import { Test } from "forge-std/Test.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+
+import { ERC20Mock } from "../../test/mocks/ERC20Mock.sol";
+import { DeployDSC } from "../../script/DeployDSC.sol";
+import { HelperConfig } from "../../script/HelperConfig.sol";
+import { DecentralizedStableCoin } from "../../src/DecentralizedStableCoin.sol";
+import { DSCcore } from "../../src/DSCcore.sol";
+
+contract HandlerTest is Test {
+    DecentralizedStableCoin public dsc;
+    DSCcore public dscCore;
+    HelperConfig public config;
+
+    ERC20Mock public weth;
+    ERC20Mock public wbtc;
+
+    constructor(DSCcore _dscCore, DecentralizedStableCoin _dsc) {
+        dscCore = _dscCore;
+        dsc = _dsc;
+
+        address[] memory tokens = dscCore.getCollateralTokens();
+        weth = ERC20Mock(tokens[0]);
+        wbtc = ERC20Mock(tokens[1]);
+    }
+
+    function _getCollateralFromSeed(uint256 collateralSeed) private view returns (ERC20Mock) {
+        if (collateralSeed % 2 == 0) {
+            return weth;
+        } else {
+            return wbtc;
+        }
+    }
+
+    function depositCollateral(uint256 collateralSeed, uint256 amount) public {
+        amount = bound(amount, 1 ether, 99 ether);
+        ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
+
+        address owner = msg.sender;
+        vm.startPrank(owner);
+        collateral.mint(owner, amount);
+        collateral.approve(address(dscCore), amount);
+        dscCore.depositCollateral(address(collateral), amount);
+        vm.stopPrank();
+    }
+}

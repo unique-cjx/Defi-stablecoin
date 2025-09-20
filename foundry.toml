@@ -1,3 +1,5 @@
+# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
 [profile.default]
 src = "src"
 out = "out"
@@ -8,6 +10,9 @@ remappings = [
 ]
 
 [fmt]
+# [fmt]: code formatter options for `forge fmt`.
+# These control formatting behavior such as bracket spacing, preferred quote style,
+# line length, and other stylistic preferences applied during formatting.
 bracket_spacing = true
 int_types = "long"
 line_length = 120
@@ -17,4 +22,12 @@ quote_style = "double"
 tab_width = 4
 wrap_comments = true
 
-# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+# 
+[invariant]
+# [invariant]: configuration for the invariant checker.
+# - runs: number of fuzzing runs to attempt when checking invariants.
+# - depth: call depth limit during invariant checks.
+# These values balance thoroughness and runtime; adjust as needed for CI or local runs.
+runs = 1000
+depth = 128
+fail_on_rever = true
