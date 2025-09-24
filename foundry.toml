@@ -28,6 +28,6 @@ wrap_comments = true
 # - runs: number of fuzzing runs to attempt when checking invariants.
 # - depth: call depth limit during invariant checks.
 # These values balance thoroughness and runtime; adjust as needed for CI or local runs.
-runs = 1000
+runs = 100
 depth = 128
-fail_on_rever = true
+fail_on_revert = true

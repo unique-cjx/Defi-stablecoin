@@ -47,4 +47,17 @@ contract HandlerTest is Test {
         dscCore.depositCollateral(address(collateral), amount);
         vm.stopPrank();
     }
+
+    function redeemCollateral(uint256 collateralSeed, uint256 amount) public {
+        ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
+        address owner = msg.sender;
+        uint256 collateralBalance = dscCore.getCollateralBalanceOf(owner, address(collateral));
+        // If the balance is 0, the fuzzer will keep this fuzzing
+        vm.assume(collateralBalance > 0);
+        uint256 redeemAmount = bound(amount, 1, collateralBalance);
+
+        vm.startPrank(owner);
+        dscCore.redeemCollateral(address(collateral), redeemAmount);
+        vm.stopPrank();
+    }
 }
