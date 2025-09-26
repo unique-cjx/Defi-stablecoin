@@ -2,6 +2,7 @@
 
 pragma solidity ^0.8.20;
 
+import { console } from "forge-std/console.sol";
 import { Test } from "forge-std/Test.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
@@ -37,5 +38,6 @@ contract OpenInvariantTest is Test {
         uint256 totalWethValueInUsd = dscCore.getUSDValue(weth, totalWethDeposited);
         uint256 totalBtcValueInUsd = dscCore.getUSDValue(wbtc, totalWBtcDeposited);
         assert(totalWethValueInUsd + totalBtcValueInUsd >= totalSupply);
+        console.log("count minted: ", handler.countMinted());
     }
 }
