@@ -21,7 +21,7 @@ contract OpenInvariantTest is Test {
     address public weth;
     address public wbtc;
 
-    function setUp() public virtual {
+    function setUp() external {
         DeployDSC deployer = new DeployDSC();
 
         (dsc, dscCore, config) = deployer.run();
@@ -38,6 +38,9 @@ contract OpenInvariantTest is Test {
         uint256 totalWethValueInUsd = dscCore.getUSDValue(weth, totalWethDeposited);
         uint256 totalBtcValueInUsd = dscCore.getUSDValue(wbtc, totalWBtcDeposited);
         assert(totalWethValueInUsd + totalBtcValueInUsd >= totalSupply);
-        console.log("count minted: ", handler.countMinted());
+
+        console.log("Weth total deposited", totalWethDeposited);
+        console.log("Wbtc total deposited", totalWBtcDeposited);
+        console.log("Total supply of DSC", totalSupply);
     }
 }

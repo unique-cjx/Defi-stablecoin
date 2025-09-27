@@ -54,3 +54,23 @@ If the stablecoin falls does the underlying collateral, also fall?
 - internal
 - private
 - view & pure functions
+
+# Usage
+## Updating dependencies
+```
+forge build
+```
+
+## Tests
+
+### Run unit & fuzz tests
+```
+forge test
+```
+
+### Test coverage
+```
+forge coverage
+```
+
+

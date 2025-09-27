@@ -56,7 +56,6 @@ contract HandlerTest is Test {
 
         vm.prank(address(dscCore));
         dsc.mint(sender, amount);
-        countMinted++;
     }
 
     function depositCollateral(uint256 collateralSeed, uint256 amount) public {

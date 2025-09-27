@@ -22,16 +22,16 @@ contract HelperConfig is Script {
     uint256 public immutable DEPLOYER_KEY;
 
     constructor() {
-        // TODO else if mainnet
+        uint256 deployKey;
         if (block.chainid == 11_155_111) {
             activeNetworkConfig = getSepoliaEthConfig();
-            DEPLOYER_KEY = vm.envUint("PRIVATE_KEY");
+            deployKey = vm.envUint("PRIVATE_KEY");
         } else {
             activeNetworkConfig = getOrCreateAnvilEthConfig();
-
             // Anvil runs local environment
-            DEPLOYER_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+            deployKey = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
         }
+        DEPLOYER_KEY = deployKey;
     }
 
     function getSepoliaEthConfig() public view returns (NetworkConfig memory sepoliaNetworkConfig) {

@@ -2,10 +2,12 @@
 
 pragma solidity ^0.8.20;
 
-import { DecentralizedStableCoin } from "./DecentralizedStableCoin.sol";
 import { ReentrancyGuard } from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { AggregatorV3Interface } from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+
+import { DecentralizedStableCoin } from "./DecentralizedStableCoin.sol";
+import { OracleLib } from "./libs/OracleLib.sol";
 
 /// Note This contract is the core of the Decentralized Stable Coin system.
 /// It handles all the logic for mining and redeeming DSC, as well as depositing and  withdrawing collateral.
@@ -56,6 +58,11 @@ contract DSCcore is ReentrancyGuard {
     ///////////////////
     event CollateralDeposited(address indexed user, address indexed token, uint256 amount);
     event CollateralRedeemed(address indexed from, address indexed to, address indexed token, uint256 amount);
+
+    ///////////////////
+    // Types
+    ///////////////////
+    using OracleLib for AggregatorV3Interface;
 
     ///////////////////
     // Modifiers
@@ -215,7 +222,8 @@ contract DSCcore is ReentrancyGuard {
         returns (uint256)
     {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-        (, int256 price,,,) = priceFeed.latestRoundData();
+        // get the price from the chainlink price feed and check if it's stale
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
 
         // Get the 18-digit number (decimals) of this token; it will give you more accuracy
         uint256 accurateUsdAmountInWei = usdAmountInWei * PRECISION;
@@ -305,10 +313,11 @@ contract DSCcore is ReentrancyGuard {
     }
 
     function getUSDValue(address token, uint256 amount) public view returns (uint256) {
-        address priceFeed = s_priceFeeds[token]; // WETH or WBTC price
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
 
-        // get the price from the chainlink price feed
-        (, int256 price,,,) = AggregatorV3Interface(priceFeed).latestRoundData();
+        // get the price from the chainlink price feed and check if it's stale
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
+
         // Chainlink default feeds are 8 decimals
         return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
     }
@@ -342,6 +351,10 @@ contract DSCcore is ReentrancyGuard {
 
     function getCollateralBalanceOf(address user, address token) external view returns (uint256) {
         return s_collateralDeposited[user][token];
+    }
+
+    function getCollateralTokenPriceFeed(address token) external view returns (address) {
+        return s_priceFeeds[token];
     }
 
     function getPrecision() external pure returns (uint256) {
