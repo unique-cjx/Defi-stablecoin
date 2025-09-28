@@ -353,6 +353,10 @@ contract DSCcore is ReentrancyGuard {
         return s_collateralDeposited[user][token];
     }
 
+    function getDscMinted(address user) external view returns (uint256) {
+        return s_dscMinted[user];
+    }
+
     function getCollateralTokenPriceFeed(address token) external view returns (address) {
         return s_priceFeeds[token];
     }

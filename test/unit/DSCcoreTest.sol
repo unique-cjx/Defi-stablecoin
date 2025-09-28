@@ -3,17 +3,20 @@
 pragma solidity ^0.8.20;
 
 // import { console } from "forge-std/console.sol";
+
 import { Test } from "forge-std/Test.sol";
+
 import { DeployDSC } from "../../script/DeployDSC.sol";
 import { HelperConfig } from "../../script/HelperConfig.sol";
 import { DSCcore } from "../../src/DSCcore.sol";
 import { DecentralizedStableCoin } from "../../src/DecentralizedStableCoin.sol";
+import { OracleLib } from "../../src/libs/OracleLib.sol";
 
-import { MockV3Aggregator } from "../../test/mocks/MockV3Aggregator.sol";
 import { ERC20Mock } from "../../test/mocks/ERC20Mock.sol";
+import { MockV3Aggregator } from "../../test/mocks/MockV3Aggregator.sol";
+import { MockMoreDebtDSC } from "../../test/mocks/MockMoreDebtDSC.sol";
 import { MockFailedMintDSC } from "../../test/mocks/MockFailedMintDSC.sol";
 import { MockFailedTransferERC20 } from "../../test/mocks/MockFailedTransferERC20.sol";
-import { MockMoreDebtDSC } from "../../test/mocks/MockMoreDebtDSC.sol";
 
 contract DSCcoreTest is Test {
     // DeployDSC public deployer;
@@ -165,6 +168,8 @@ contract DSCcoreTest is Test {
         vm.stopPrank();
     }
 
+    /// Deposit and mint DSC tests
+
     function testRevertIfMintedDscBreaksHealthFactor() public {
         vm.startPrank(testUser);
         ERC20Mock(weth).approve(address(dscCore), AMOUNT_MINTED_DSC);
@@ -177,6 +182,17 @@ contract DSCcoreTest is Test {
         // HealthFactor = (CollateralThreshold / DSCAmount) = 0.5 < 1, thus revert
         vm.expectRevert(abi.encodeWithSelector(DSCcore.DSCcore__HealthFactorBelowOne.selector, badHealthFactor));
         dscCore.depositCollateralAndMint(weth, AMOUNT_MINTED_DSC, dscAmount);
+        vm.stopPrank();
+    }
+
+    // Test if collateral breaks health factor
+    function testRevertIfCollateralBroken() public {
+        vm.startPrank(testUser);
+        ERC20Mock(weth).approve(address(dscCore), AMOUNT_COLLATERAL);
+        uint256 dscAmount = getValueOfWethInUsd(AMOUNT_MINTED_DSC);
+        vm.warp(block.timestamp + 1.1 hours);
+        vm.expectRevert(OracleLib.OracleLib__StalePrice.selector);
+        dscCore.depositCollateralAndMint(weth, AMOUNT_COLLATERAL, dscAmount);
         vm.stopPrank();
     }
 

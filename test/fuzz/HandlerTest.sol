@@ -2,7 +2,6 @@
 
 pragma solidity ^0.8.20;
 
-import { console } from "forge-std/console.sol";
 import { Test } from "forge-std/Test.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
@@ -21,7 +20,6 @@ contract HandlerTest is Test {
     ERC20Mock public wbtc;
 
     uint64 public constant MAX_DEPOSITORS = type(uint64).max;
-    uint256 public countMinted;
     address[] public depositedUsers;
 
     constructor(DSCcore _dscCore, DecentralizedStableCoin _dsc) {
@@ -47,28 +45,32 @@ contract HandlerTest is Test {
         }
         address sender = depositedUsers[userSeed % depositedUsers.length];
         vm.startPrank(sender);
-        (, uint256 collateralValueInUsd) = dscCore.getAccountInformation();
-        console.log("[collateralValueInUsd]: ", collateralValueInUsd);
-        uint256 totalDscMinted = (collateralValueInUsd / 4);
-        vm.assume(totalDscMinted > 0);
-        amount = bound(amount, 1, totalDscMinted);
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dscCore.getAccountInformation();
+        vm.assume(collateralValueInUsd > 0);
+        amount = bound(amount, 1, collateralValueInUsd / 4);
+        uint256 healthFactor = dscCore.calculateHealthFactor(totalDscMinted + amount, collateralValueInUsd);
         vm.stopPrank();
+
+        if (healthFactor < dscCore.getMinHealthFactor()) {
+            return;
+        }
 
         vm.prank(address(dscCore));
         dsc.mint(sender, amount);
     }
 
-    function depositCollateral(uint256 collateralSeed, uint256 amount) public {
-        amount = bound(amount, 1, MAX_DEPOSITORS);
+    function depositCollateralAndMint(uint256 collateralSeed, uint256 amount) public {
+        amount = bound(amount, 10, MAX_DEPOSITORS);
         ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
 
         address owner = msg.sender;
         vm.startPrank(owner);
         collateral.mint(owner, amount);
         collateral.approve(address(dscCore), amount);
-        dscCore.depositCollateral(address(collateral), amount);
-        vm.stopPrank();
+
+        dscCore.depositCollateralAndMint(address(collateral), amount, amount / 2);
         depositedUsers.push(owner);
+        vm.stopPrank();
     }
 
     function redeemCollateral(uint256 collateralSeed, uint256 amount) public {
@@ -77,10 +79,24 @@ contract HandlerTest is Test {
         uint256 collateralBalance = dscCore.getCollateralBalanceOf(owner, address(collateral));
         // If the balance is 0, the fuzzer will keep this fuzzing
         vm.assume(collateralBalance > 0);
-        uint256 redeemAmount = bound(amount, 1, collateralBalance);
+        uint256 redeemAmount = bound(amount, 1, collateralBalance / 2);
 
         vm.startPrank(owner);
         dscCore.redeemCollateral(address(collateral), redeemAmount);
+        vm.stopPrank();
+    }
+
+    function burnDsc(uint256 amount, uint256 userSeed) public {
+        if (depositedUsers.length == 0) {
+            return;
+        }
+        address sender = depositedUsers[userSeed % depositedUsers.length];
+        vm.startPrank(sender);
+        uint256 dscBalance = dscCore.getDscMinted(sender);
+        vm.assume(dscBalance > 0);
+        uint256 burnAmount = bound(amount, 1, dscBalance);
+        dsc.approve(address(dscCore), burnAmount);
+        dscCore.burnDsc(burnAmount);
         vm.stopPrank();
     }
 }
